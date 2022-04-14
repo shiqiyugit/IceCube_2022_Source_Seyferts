@@ -1,0 +1,8 @@
+#eval `/cvmfs/icecube.opensciencegrid.org/py3-v4.1.0/setup.sh`
+#export PYTHONPATH="/home/shiqiyu/.local/lib/python3.7/site-packages/":$PYTHONPATH
+source /home/shiqiyu/venv/bin/activate
+eval `/cvmfs/icecube.opensciencegrid.org/py3-v4.1.0/setup.sh`
+
+#export PYTHONPATH="/home/shiqiyu/venv/lib/python3.7/site-packages/":$PYTHONPATH
+#source /data/i3home/ssclafani/venvs/venv-3/bin/activate'
+
