@@ -899,7 +899,7 @@ def find_stacking_n_sig(state, nsigma, fit, inputdir, verbose, nsig, inputname):
     this_dir = os.path.dirname(os.path.abspath(__file__))
     ana = state.ana
 
-    def find_n_sig_cat(src, weighted_src=None, gamma=3.0, beta=0.9, nsigma=None, cutoff=None, verbose=False, nsig=True, src_dist=None, src_log_lumin=None):
+    def find_n_sig_cat(src, weighted_src=None, gamma=3.0, beta=0.9, nsigma=None, cutoff=None, verbose=False, nsig=True, src_dist=None, src_log_lumin=None, fit=fit):
         # get signal trials, background distribution, and trial runner
         if cutoff == None:
             cutoff = np.inf
@@ -956,6 +956,7 @@ def find_stacking_n_sig(state, nsigma, fit, inputdir, verbose, nsig, inputname):
             return result['n_sig']
         else:
             return flux 
+
     fluxs = []
     if nsigma:
         beta = 0.5
@@ -993,6 +994,9 @@ def find_stacking_n_sig(state, nsigma, fit, inputdir, verbose, nsig, inputname):
         #srcs= np.load('{}/catalogs/{}_ESTES_12.pickle'.format(this_dir, cat), allow_pickle=True)
         #src = cy.utils.Sources(ra = srcs['ra_deg'], dec=srcs['dec_deg'], deg=True)
         name='flux'
+        fitstr='_nofit'
+        if fit:
+            fitstr = '_chi2'
         if nsig:
             name='nss'
         if inputname.find('corona') ==-1:
@@ -1011,7 +1015,7 @@ def find_stacking_n_sig(state, nsigma, fit, inputdir, verbose, nsig, inputname):
             else:
                 np.save(base_dir + '/stacking_{}_sens_{}_E{}_{}.npy'.format(cat, name, int(gamma * 100), inputname), fluxs)
 
-        else:
+        else: #corona model injection
             if inputname.find('powerlaw') !=-1:
                 gamma = 3
             else:
@@ -1025,9 +1029,9 @@ def find_stacking_n_sig(state, nsigma, fit, inputdir, verbose, nsig, inputname):
             fluxs.append(f)
        
             if nsigma:
-                np.save(base_dir + '/stacking_{}_dp_{}sigma_{}_E{}_{}.npy'.format(cat, nsigma, name,  int(gamma * 100), inputname), fluxs)
+                np.save(base_dir + '/stacking_{}_dp_{}sigma_{}_E{}_{}{}.npy'.format(cat, nsigma, name,  int(gamma * 100), inputname, fitstr), fluxs)
             else:
-                np.save(base_dir + '/stacking_{}_sens_{}_E{}_{}.npy'.format(cat, name, int(gamma * 100),  inputname), fluxs)
+                np.save(base_dir + '/stacking_{}_sens_{}_E{}_{}{}.npy'.format(cat, name, int(gamma * 100),  inputname, fitstr), fluxs)
 
 
 if __name__ == '__main__':
