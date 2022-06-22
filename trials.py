@@ -28,28 +28,32 @@ class State (object):
     @property
     def ana (self):
         if self._ana is None:
-            specs = cy.selections.ESTESDataSpecs.ESTES_2011_2020_pass2_0
+            specs = cy.selections.ESTESDataSpecs.ESTES_2011_2021
 
-            version = 'version-p001-p00'
+            version = 'version-001-p00'
             repo.clear_cache()
 
             if self.mask_deg != 0:
                 df_orig = pd.read_hdf('/cvmfs/icecube.opensciencegrid.org/users/shiqiyu/selected_xray_fullsky_seyferts_10yr.h5')
                 idx = np.logical_and(df_orig['DECdeg'] < -5, df_orig['DECdeg'] > -80)
-                idx2 = df_orig['neutrino_expectation_dnn'] >=1.21
+                idx2 = df_orig['neutrino_expectation_estes'] >=0.1557
 
-                df = df_orig[idx&idx2].sort_values(by='neutrino_expectation_dnn', ascending=False).copy(deep=True)
+                df = df_orig[idx&idx2].sort_values(by='neutrino_expectation_estes', ascending=False).copy(deep=True)
                 decs = np.array(df["DECdeg"])[0:int(self.nsrc_tomask+1)]
                 ras = np.array(df["RAdeg"])[0:int(self.nsrc_tomask+1)]
 
                 src_tomask=cy.utils.Sources(dec=decs, ra=ras, deg=True)
-                ana = cy.get_analysis(repo, version, specs, dir = self.ana_dir, mask_plane=True, mask_sources=True, strip = self.mask_deg,  source_r = np.radians(self.source_r), src_tomask=src_tomask)
-                
-                self.ana_name += '_masking_GP{}_top{}_R{}'.format(int(self.mask_deg), int(self.nsrc_tomask), int(self.source_r))
+                ana = cy.get_analysis(repo, version, specs, 
+                                     space_bg_kw = {'bg_mc_weight':'bg_weight'}, energy_kw = {'bg_mc_weight': 'bg_weight'}, load_sig = True,
+                                     dir = self.ana_dir, mask_plane=True, mask_sources=False, strip = self.mask_deg)#,  source_r = np.radians(self.source_r), src_tomask=src_tomask)
+               
+                self.ana_name += '_masking_GP{}'.format(int(self.mask_deg))
+
+#                self.ana_name += '_masking_GP{}_top{}_R{}'.format(int(self.mask_deg), int(self.nsrc_tomask), int(self.source_r))
 
             else:
                 ana = cy.get_analysis(repo, version, specs, 
-                                     space_bg_kw = {'mc_weight':'bg_weight'}, energy_kw = {'bg_from_mc_weight': 'bg_weight'}, load_sig = True) 
+                                     space_bg_kw = {'bg_mc_weight':'bg_weight'}, energy_kw = {'bg_mc_weight': 'bg_weight'}, load_sig = True) 
 
             if self.save:
                 cy.utils.ensure_dir (self.ana_dir)
@@ -196,7 +200,7 @@ def do_ps_sens (
 @click.option ('-n', '--n-sig', default=0, type=float, help = 'Number of signal events to inject')
 @click.option ('--poisson/--nopoisson', default=True, 
     help = 'toggle possion weighted signal injection')
-@click.option ('--sigsub/--nosigsub', default=True, type=bool, 
+@click.option ('--sigsub/--nosigsub', default=False, type=bool, 
     help='Include Signal Subtraction in LLH')
 @click.option ('--dec_deg',   default=0, type=float, help='Declination in deg')
 @click.option ('--gamma', default=2.0, type=float, help='Spectral Index to inject')
@@ -262,7 +266,7 @@ def do_ps_trials (
 @click.option ('-n', '--n-sig', default=0, type=float, help = 'Number of signal events to inject')
 @click.option ('--poisson/--nopoisson', default=True,
     help = 'toggle possion weighted signal injection')
-@click.option ('--sigsub/--nosigsub', default=True, type=bool,
+@click.option ('--sigsub/--nosigsub', default=False, type=bool,
     help='Include Signal Subtraction in LLH')
 @click.option ('-dec', '--dec_deg',   default=-43.0191, type=float, help='Declination in deg')
 @click.option ('-dist','--dist_mpc', default=3.7, type=float, help='distance in Mpc')
@@ -338,9 +342,9 @@ def collect_ps_bg (state, fit,  dist, inputdir, outputname):
     if outputname:
         df_orig = pd.read_hdf('/cvmfs/icecube.opensciencegrid.org/users/shiqiyu/selected_xray_fullsky_seyferts_10yr.h5')
         idx = np.logical_and(df_orig['DECdeg'] < -5, df_orig['DECdeg'] > -80)
-        idx2 = df_orig['neutrino_expectation_dnn'] >=1.21
+        idx2 = df_orig['neutrino_expectation_estes'] >=0.1557
 
-        df = df_orig[idx&idx2].sort_values(by='neutrino_expectation_dnn', ascending=False).copy(deep=True)
+        df = df_orig[idx&idx2].sort_values(by='neutrino_expectation_estes', ascending=False).copy(deep=True)
         dec_degs = df['DECdeg']
     else:
         dec_degs = np.r_[-81:+81.01:2]
@@ -353,7 +357,11 @@ def collect_ps_bg (state, fit,  dist, inputdir, outputname):
             suffix = 'TSD'
         else:
             suffix = ''
-    outfile = '{}/ps/trials/{}/bg{}{}.dict'.format (
+    if 'kra' in outputname:
+        outfile = '{}/gp_bg_ps/trials/{}/bg{}{}.dict'.format (
+            state.base_dir, state.ana_name,  suffix, outputname)
+    else:
+        outfile = '{}/ps/trials/{}/bg{}{}.dict'.format (
             state.base_dir, state.ana_name,  suffix, outputname)
     bg = {}
     bgs = {}
@@ -376,7 +384,6 @@ def collect_ps_bg (state, fit,  dist, inputdir, outputname):
                 merge=np.concatenate, post_convert=post_convert)
         if bg_trials is not False:
             bgs[float(key)] = bg_trials
-
     bg['dec'] = bgs
     print ('\rDone.' + 20 * ' ')
     flush ()
@@ -386,7 +393,7 @@ def collect_ps_bg (state, fit,  dist, inputdir, outputname):
 
 @cli.command ()
 @click.option ('--inputdir', default=None, help = 'Option to set a read directory that isnt the base directory')
-@click.option ('--sigsub/--nosigsub', default=True, type=bool)
+@click.option ('--sigsub/--nosigsub', default=False, type=bool)
 @click.option('--outputname', default=None, type=str, help='str append to output file')
 @pass_state
 def collect_ps_sig (state, inputdir, sigsub, outputname):
@@ -406,7 +413,10 @@ def collect_ps_sig (state, inputdir, sigsub, outputname):
 
     sig = cy.bk.get_all (
         sig_dir, '*.npy', merge=np.concatenate, post_convert=cy.utils.Arrays)
-    outfile = '{}/ps/trials/{}/sig_{}.dict'.format (state.base_dir, state.ana_name, outputname)
+    if 'kra' in outputname:
+        outfile = '{}/gp_bg_ps/trials/{}/sig_{}.dict'.format (state.base_dir, state.ana_name, outputname)
+    else:
+        outfile = '{}/ps/trials/{}/sig_{}.dict'.format (state.base_dir, state.ana_name, outputname)
 
     with open (outfile, 'wb') as f:
         pickle.dump (sig, f, -1)
@@ -414,7 +424,7 @@ def collect_ps_sig (state, inputdir, sigsub, outputname):
 
 
 @cli.command ()
-@click.option ('--gamma', default=2.0, type=float, help='Spectral Index to inject')
+@click.option ('--gamma', default=0.0, type=float, help='Spectral Index to inject')
 @click.option ('--nsigma', default=None, type=float, help='Number of sigma to find')
 @click.option ('-c', '--cutoff', default=np.inf, type=float, help='exponential cutoff energy (TeV)')      
 @click.option ('--verbose/--noverbose', default=False, help = 'Noisy Output')
@@ -438,20 +448,26 @@ def find_ps_n_sig(state, nsigma, cutoff, gamma, verbose, fit, inputdir, corona, 
     else:
         gamma=0
     sigfile = '{}/sig_{}_nosigsub.dict'.format (base_dir, inputname)
+#    sigfile = '{}/sig_{}_sigsub.dict'.format (base_dir, inputname)
     sig = np.load (sigfile, allow_pickle=True)
     fitstr = '_chi2'
-    bgfile = '{}/bg{}{}.dict'.format (base_dir,fitstr, inputname)
+    if fit:
+        bgfile = '{}/bg_chi2{}.dict'.format (base_dir, inputname)
+    else:
+        bgfile = '{}/bgTSD{}.dict'.format (base_dir, inputname)
+#    bgfile = '{}/bg{}{}.dict'.format (base_dir,fitstr, inputname)
 #    bgfile = '{}/bg{}{}_nosigsub.dict'.format (base_dir,fitstr, inputname)
 
     sig = np.load (sigfile, allow_pickle=True)
     bg = np.load (bgfile, allow_pickle=True)
+    print(bg)
     if corona:
         df_orig = pd.read_hdf('/cvmfs/icecube.opensciencegrid.org/users/shiqiyu/selected_xray_fullsky_seyferts_10yr.h5')
         idx = np.logical_and(df_orig['DECdeg'] < -5, df_orig['DECdeg'] >-80)
-        idx2 = df_orig['neutrino_expectation_dnn'] >=1.21
+        idx2 = df_orig['neutrino_expectation_estes'] >=0.1557
 
         cat = df_orig[idx &idx2].copy(deep=True)#.round(3)
-        cat.sort_values(by='neutrino_expectation_dnn', ascending=False,inplace=True)
+        cat.sort_values(by='neutrino_expectation_estes', ascending=False,inplace=True)
         decs = cat['DECdeg']
         ras = cat['RAdeg']
         log_lumins = cat['logL2-10-intr']
@@ -468,7 +484,7 @@ def find_ps_n_sig(state, nsigma, cutoff, gamma, verbose, fit, inputdir, corona, 
             cutoff_GeV = cutoff*1e3
 
         if verbose:
-            print(gamma, dec, cutoff)
+            print("gamma, dec, cutoff: ", gamma, dec, cutoff)
         if corona:
             sig_trials = cy.bk.get_best(sig,  'dec', dec, 'nsig')  
             #print(sig_trials)
@@ -477,11 +493,18 @@ def find_ps_n_sig(state, nsigma, cutoff, gamma, verbose, fit, inputdir, corona, 
                 cutoff, 'dec', dec, 'nsig')    
         b = cy.bk.get_best(bg,  'dec', dec)
         if verbose:
-            print(b)
+            print("best bg, dec: ", b)
         src = cy.utils.sources(ra, dec, deg=True)
         if corona:
             conf = cg.get_seyfert_ps_conf(
                 src, dist_mpc, log_lumin, sigsub=False)
+
+            if inputname.find('kra') != -1:
+                print("find sens/dp for gp template bgs")
+                sigmas = ana[0].sig.sigma
+                conf = cg.get_gp_bg_ps_conf(src=src, src_dist=dist_mpc, src_log_lumin=log_lumin,
+                    template_str='kra5', sigmas = sigmas, cutoff_GeV=cutoff_GeV, base_dir=state.base_dir)
+
             if gamma>0:
                 conf['flux']=cy.hyp.PowerLawFlux(gamma, energy_cutoff=cutoff_GeV)
                 conf.pop('energy')
@@ -516,6 +539,7 @@ def find_ps_n_sig(state, nsigma, cutoff, gamma, verbose, fit, inputdir, corona, 
             flux = tr.to_E2dNdE(result['n_sig'], E0=100, unit=1e3)
 
         if verbose:
+            print("ts, beta, result['n_sig'], flux")
             print(ts, beta, result['n_sig'], flux)
 
         return flux , result['n_sig'], ts
@@ -542,7 +566,7 @@ def find_ps_n_sig(state, nsigma, cutoff, gamma, verbose, fit, inputdir, corona, 
             f, n, ts = get_n_sig(
                 dec=dec, gamma=gamma, beta=beta, nsigma=nsigma, cutoff=cutoff,
                 fit=fit, verbose=verbose)
-        print(dec)
+        print("dec, n, flux, ts")
         print('{:.3} : {:.3} : {:.5}  : TS : {:.5}                                    '.format(
             dec, n, f, ts) , end='\r', flush=True)
 
@@ -550,6 +574,18 @@ def find_ps_n_sig(state, nsigma, cutoff, gamma, verbose, fit, inputdir, corona, 
         ns.append(n)
         tss.append(ts)
     
+    if nsigma:
+          np.save(base_dir + '/ps_dp_{}sigma_flux_{}_{}.npy'.format(nsigma, inputname, fit_str), fluxs)
+          np.save(base_dir + '/ps_dp_{}sigma_tss_{}_{}.npy'.format(nsigma, inputname, fit_str), tss)
+          np.save(base_dir + '/ps_dp_{}sigma_nss_{}_{}.npy'.format(nsigma, inputname, fit_str), ns)
+          np.save(base_dir + '/ps_dp_{}sigma_decs_{}_{}.npy'.format(nsigma, inputname, fit_str), decs)
+    else:
+        np.save(base_dir + '/ps_sens_flux_{}_{}.npy'.format(inputname, fit_str), fluxs)
+        np.save(base_dir + '/ps_sens_tss_{}_{}.npy'.format(inputname, fit_str), tss)
+        np.save(base_dir + '/ps_sens_nss_{}_{}.npy'.format(inputname, fit_str), ns)
+        np.save(base_dir + '/ps_sens_decs_{}_{}.npy'.format(inputname, fit_str), decs)
+
+    '''
     if corona:
       if gamma >0:
           gammastr='powerlaw'
@@ -578,13 +614,13 @@ def find_ps_n_sig(state, nsigma, cutoff, gamma, verbose, fit, inputdir, corona, 
         np.save(base_dir + '/ps_sens_flux_E{}_{}.npy'.format(int(gamma * 100), fit_str), fluxs)
         np.save(base_dir + '/ps_sens_nss_E{}_{}.npy'.format(int(gamma * 100), fit_str), ns)
         np.save(base_dir + '/ps_sens_decs_E{}_{}.npy'.format(int(gamma * 100), fit_str), decs)
-
+      '''
 
 @cli.command()
 @click.option('--n-trials', default=1000, type=int)
 @click.option ('-n', '--n-sig', default=0, type=float)
 @click.option ('--poisson/--nopoisson', default=True)
-@click.option ('--sigsub/--nosigsub', default=True, type=bool,
+@click.option ('--sigsub/--nosigsub', default=False, type=bool,
     help='Include Signal Subtraction in LLH')
 @click.option ('--catalog',   default='seyfert_southernsky' , type=str, help='Stacking Catalog, SNR, PWN or UNID')
 @click.option ('--gamma', default=0, type=float, help = 'gamma = 0 fit to corona flux; otherwise fit to powerlaw')
@@ -595,10 +631,11 @@ def find_ps_n_sig(state, nsigma, cutoff, gamma, verbose, fit, inputdir, corona, 
 @click.option ('--corona', default=True, type=bool, help="inject with corona flux or not")
 @click.option ('--debug', default=False, type=bool)
 @click.option ('--nu_max', default = 1000, type=float)
+@click.option ('--nu_min', default =0.1557, type=float)
 @pass_state
 def do_seyfert_stacking_trials (
         state, n_trials, gamma, cutoff, catalog,
-        n_sig,  poisson, sigsub, seed, cpus, corona, debug, weightedfit, nu_max, logging=True):
+        n_sig,  poisson, sigsub, seed, cpus, corona, debug, weightedfit, nu_min, nu_max, logging=True):
     """
     Do trials from a stacking catalog
     """
@@ -611,10 +648,12 @@ def do_seyfert_stacking_trials (
     df_orig = pd.read_hdf('/cvmfs/icecube.opensciencegrid.org/users/shiqiyu/selected_xray_fullsky_seyferts_10yr.h5')
     idx = np.logical_and(df_orig['DECdeg'] < -5, df_orig['DECdeg'] > -80)
     if debug:
-        idx2 = df_orig['neutrino_expectation_dnn'] >= 10 #top 3
+        idx2 = df_orig['neutrino_expectation_estes'] >=0.1557
     else:
-        idx2 =np.logical_and(df_orig['neutrino_expectation_dnn'] >=1.21, df_orig['neutrino_expectation_dnn']<=nu_max)
-    cat = df_orig[idx&idx2].sort_values(by='neutrino_expectation_dnn', ascending=False).copy(deep=True)
+        idx2 =np.logical_and(df_orig['neutrino_expectation_estes'] >=nu_min, df_orig['neutrino_expectation_estes']<=nu_max)
+    cat = df_orig[idx&idx2].sort_values(by='neutrino_expectation_estes', ascending=False).copy(deep=True)
+    print(sum(cat['neutrino_expectation_estes']))
+
     print(len(cat), cat[['CTPT_NAME','DECdeg', 'DIST', 'F2-10-intr', 'F14-195-intr','logNH', 'neutrino_expectation_estes']])
     src_dist = cat['DIST']
     src_log_lumin = cat['logL2-10-intr']
@@ -650,7 +689,7 @@ def do_seyfert_stacking_trials (
     print (t1 - t0, 'elapsed.')
     flush ()
     catalog+=str(len(cat))
-    if n_sig:
+    if n_sig>0:
         if corona:
             out_dir = cy.utils.ensure_dir (
                 '{}/stacking/trials/{}/catalog/{}/{}/{}/corona{}{}/cutoff_TeV/{:.0f}/nsig/{:08.3f}'.format (
@@ -764,9 +803,9 @@ def do_stacking_sens (
     ana = state.ana
     df_orig = pd.read_hdf('/cvmfs/icecube.opensciencegrid.org/users/shiqiyu/selected_xray_fullsky_seyferts_10yr.h5')
     idx = np.logical_and(df_orig['DECdeg'] < -5, df_orig['DECdeg'] > -80)
-    idx2 = df_orig['neutrino_expectation_dnn'] >=1.21
+    idx2 = df_orig['neutrino_expectation_estes'] >=0.1557
 
-    cat = df_orig[idx&idx2].sort_values(by='neutrino_expectation_dnn', ascending=False).copy(deep=True)
+    cat = df_orig[idx&idx2].sort_values(by='neutrino_expectation_estes', ascending=False).copy(deep=True)
 
     src_dist = cat['DIST']
     src_log_lumin = cat['logL2-10-intr']
@@ -919,8 +958,8 @@ def find_stacking_n_sig(state, nsigma, fit, inputdir, verbose, nsig, inputname):
             print(b)
         if 'corona' in inputname:
             conf = cg.get_seyfert_ps_conf(src, src_dist, src_log_lumin, gamma, weighted_src=weighted_src)
-        if gamma > 0:
-            conf = cg.get_ps_conf(src=src, gamma=gamma, cutoff_GeV=cutoff_GeV)
+        #if gamma > 0:
+            #conf = cg.get_ps_conf(src=src, gamma=gamma, cutoff_GeV=cutoff_GeV)
         #else:
         #    conf = cg.get_ps_conf(src=src, gamma=gamma, cutoff_GeV=cutoff_GeV)
         tr = cy.get_trial_runner(ana=ana, conf=conf)
@@ -977,9 +1016,9 @@ def find_stacking_n_sig(state, nsigma, fit, inputdir, verbose, nsig, inputname):
 
         df_orig = pd.read_hdf('/cvmfs/icecube.opensciencegrid.org/users/shiqiyu/selected_xray_fullsky_seyferts_10yr.h5')
         idx = np.logical_and(df_orig['DECdeg'] < -5, df_orig['DECdeg'] > -80)
-        idx2 = df_orig['neutrino_expectation_dnn'] >=1.21
+        idx2 = df_orig['neutrino_expectation_estes'] >=0.1557
 
-        df = df_orig[idx&idx2].sort_values(by='neutrino_expectation_dnn', ascending=False).copy(deep=True)
+        df = df_orig[idx&idx2].sort_values(by='neutrino_expectation_estes', ascending=False).copy(deep=True)
 
         src_dist = df['DIST']
         src_log_lumin = df['logL2-10-intr']
@@ -1034,6 +1073,161 @@ def find_stacking_n_sig(state, nsigma, fit, inputdir, verbose, nsig, inputname):
                 np.save(base_dir + '/stacking_{}_sens_{}_E{}_{}{}.npy'.format(cat, name, int(gamma * 100),  inputname, fitstr), fluxs)
 
 
+@cli.command()
+@click.argument('temp', default="kra5")
+@click.option('--n-trials', default=1000, type=int)
+@click.option ('-n', '--n-sig', default=0, type=float)
+@click.option ('--poisson/--nopoisson', default=True)
+@click.option ('--seed', default=None, type=int)
+@click.option ('--cpus', default=1, type=int)
+@click.option ('-c', '--cutoff', default=np.inf, type=float, help='exponential cutoff energy (TeV)')
+@pass_state
+def do_gp_trials (
+            state, temp, n_trials, n_sig,
+            poisson, seed, cpus,
+            cutoff, logging=True):
+    """
+    Do trials for galactic plane templates including Fermi bubbles
+    and save output in a structured directory based on parameters
+    """
+    temp = temp.lower()
+    if seed is None:
+        seed = int (time.time () % 2**32)
+    random = cy.utils.get_random (seed)
+    print('Seed: {}'.format(seed))
+    ana = state.ana
+    cutoff_GeV = cutoff * 1e3
+    sigmas = ana[0].sig.sigma
+
+    def get_tr(temp):
+        gp_conf = cg.get_gp_conf(
+            template_str=temp, sigmas = sigmas, cutoff_GeV=cutoff_GeV, base_dir=state.base_dir)
+        tr = cy.get_trial_runner(gp_conf, inj_conf = gp_conf['inj_conf'], update_bg = False, sigsub=False, ana=ana, mp_cpus=cpus, seed=seed)
+        return tr
+
+    tr = get_tr(temp)
+    t0 = now ()
+    print ('Beginning trials at {} ...'.format (t0))
+    flush ()
+    trials = tr.get_many_fits (
+        n_trials, n_sig=n_sig, poisson=poisson, seed=seed, logging=logging)
+    t1 = now ()
+    print ('Finished trials at {} ...'.format (t1))
+    print (trials if n_sig else cy.dists.Chi2TSD (trials))
+    print (t1 - t0, 'elapsed.')
+    flush ()
+    if temp =='fermibubbles':
+        out_dir = cy.utils.ensure_dir (
+            '{}/gp/trials/{}/{}/{}/cutoff/{}/nsig/{:08.3f}'.format (
+                state.base_dir, state.ana_name,
+                temp,
+                'poisson' if poisson else 'nonpoisson', cutoff,
+                n_sig))
+    else:
+        out_dir = cy.utils.ensure_dir (
+            '{}/gp/trials/{}/{}/{}/nsig/{:08.3f}'.format (
+                state.base_dir, state.ana_name,
+                temp,
+                'poisson' if poisson else 'nonpoisson',
+                n_sig))
+
+    out_file = '{}/trials_{:07d}__seed_{:010d}.npy'.format (
+        out_dir, n_trials, seed)
+    print ('-> {}'.format (out_file))
+    np.save (out_file, trials.as_array)
+
+
+@cli.command()
+@click.argument('temp', default="kra5")
+@click.option('--n-trials', default=1000, type=int)
+@click.option ('-n', '--n-sig', default=28, type=float)
+@click.option ('--poisson/--nopoisson', default=True)
+@click.option ('--seed', default=None, type=int)
+@click.option ('--cpus', default=1, type=int)
+@click.option ('--nsrc', default=1, type=int, help='nth src to run')
+@click.option ('-c', '--cutoff', default=np.inf, type=float, help='exponential cutoff energy (TeV)')
+@pass_state
+def do_gp_bg_ps_trials (
+            state, temp, n_trials, n_sig,
+            poisson, seed, cpus,
+            cutoff, nsrc, logging=True):
+
+    temp = temp.lower()
+    if seed is None:
+        seed = int (time.time () % 2**32)
+    random = cy.utils.get_random (seed)
+    print('Seed: {}'.format(seed))
+    ana = state.ana
+    cutoff_GeV = cutoff * 1e3
+    sigmas = ana[0].sig.sigma
+
+    """
+    Do seeded point source trials and save output in a structured dirctory based on paramaters
+    Used for final Large Scale Trail Calculation
+    """
+
+    df_orig = pd.read_hdf('/cvmfs/icecube.opensciencegrid.org/users/shiqiyu/selected_xray_fullsky_seyferts_10yr.h5')
+    idx = np.logical_and(df_orig['DECdeg'] < -5, df_orig['DECdeg'] > -80)
+    idx2 = df_orig['neutrino_expectation_estes'] >=0.1557
+
+    df = df_orig[idx&idx2].sort_values(by='neutrino_expectation_estes', ascending=False).copy(deep=True)
+    
+    src_dist = df['DIST'][nsrc]
+    src_log_lumin = df['logL2-10-intr'][nsrc]
+    src_dec = df['DECdeg'][nsrc]
+    src_ra = df['RAdeg'][nsrc]
+    src = cy.utils.Sources(dec=src_dec, ra = src_ra, deg=True)
+    
+    replace = False
+    t0 = now ()
+#    dir = cy.utils.ensure_dir ('{}/ps/'.format (state.base_dir, src_dec))
+    a = ana[0]
+
+    def get_gp_tr(temp, dec, dist_mpc, log_lumin, cpus=cpus, sigsub=False):
+        src = cy.utils.sources(0, dec, deg=True)
+        #conf = cg.get_seyfert_ps_conf(
+        #    src, dist_mpc, log_lumin, sigsub=sigsub, gamma=gamma)
+        #tr = cy.get_trial_runner(ana=ana, conf= conf, mp_cpus=cpus)
+        gp_conf = cg.get_gp_bg_ps_conf(src=src, src_dist=dist_mpc, src_log_lumin=log_lumin,
+            template_str=temp, sigmas = sigmas, cutoff_GeV=cutoff_GeV, base_dir=state.base_dir)
+        tr_gp = cy.get_trial_runner(gp_conf, inj_conf = gp_conf, update_bg = False, sigsub=False, ana=ana, mp_cpus=cpus, seed=seed)
+        return tr_gp
+
+    tr = get_gp_tr(temp,src_dec, dist_mpc=src_dist, log_lumin=src_log_lumin)
+    t0 = now ()
+    print ('Beginning trials at {} ...'.format (t0))
+    flush ()
+    trials = tr.get_many_fits (
+        n_trials, n_sig=n_sig, poisson=poisson, seed=seed, logging=logging)
+    t1 = now ()
+    print ('Finished trials at {} ...'.format (t1))
+    print (trials if n_sig else cy.dists.Chi2TSD (trials))
+    print (t1 - t0, 'elapsed.')
+    flush ()
+    if temp =='fermibubbles':
+        out_dir = cy.utils.ensure_dir (
+            '{}/gp_bg_ps/trials/{}/{}/{}/cutoff/{}/nsig/{:08.3f}'.format (
+                state.base_dir, state.ana_name,
+                temp,
+                'poisson' if poisson else 'nonpoisson', cutoff,
+                n_sig))
+    if n_sig:
+
+        out_dir = cy.utils.ensure_dir (
+            '{}/gp_bg_ps/trials/{}/{}/{}/dec/{:+08.3f}/nsig/{:08.3f}'.format (
+                state.base_dir, state.ana_name,
+                temp,
+                'poisson' if poisson else 'nonpoisson',
+                src_dec,
+                n_sig))
+    else:
+        out_dir = cy.utils.ensure_dir ('{}/gp_bg_ps/trials/{}/{}/bg/dec/{:+08.3f}/'.format (
+            state.base_dir, state.ana_name, temp, src_dec))
+
+    out_file = '{}/trials_{:07d}__seed_{:010d}.npy'.format (
+        out_dir, n_trials, seed)
+    print ('-> {}'.format (out_file))
+    np.save (out_file, trials.as_array)
 if __name__ == '__main__':
     exe_t0 = now ()
     print ('start at {} .'.format (exe_t0))
