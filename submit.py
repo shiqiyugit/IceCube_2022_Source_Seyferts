@@ -21,17 +21,20 @@ submit_cfg_file = cg.submit_cfg_file
 
 
 class State (object):
-    def __init__ (self, ana_name, ana_dir, save,  base_dir,  job_basedir, mask_deg=0, source_r=0, nsrc_tomask=0):
+    def __init__ (self, ana_name, ana_dir, save,  base_dir,  job_basedir, mask_deg=0, source_r=0, nsrc_tomask=None, mask_self=False):
         self.ana_name, self.ana_dir, self.save, self.job_basedir = ana_name, ana_dir, save, job_basedir
         self.base_dir = base_dir
         self.mask_deg=mask_deg
         self.nsrc_tomask = nsrc_tomask
         self.source_r = source_r
+        self.mask_self=mask_self
 
         if self.mask_deg !=0:
             self.ana_name += '_masking{:08.3f}'.format(self.mask_deg)
         if self.source_r !=0:
             self.ana_name += '_top{}_{}deg'.format(nsrc_tomask, source_r)
+        if self.mask_self:
+            self.ana_name += '_selfmask'
         self._ana = None    
     @property
     def state_args (self):
@@ -47,12 +50,13 @@ pass_state = click.make_pass_decorator (State)
 @click.option ('--save/--nosave', default=False)
 @click.option ('--base-dir', default=base_dir,
                type=click.Path (file_okay=False, writable=True))
-@click.option ('--mask_deg', default=0, type=float)
-@click.option ('--source_r', default=0, type=float)
-@click.option ('--nsrc_tomask', default=0, type=int)
+@click.option ('--mask_deg', default=0, type=float, help='+- degree along GP')
+@click.option ('--source_r', default=0, type=float, help='radius degree around sources')
+@click.option ('--nsrc_tomask', default=None, type=int)
+@click.option ('--mask_self', default=False, type=bool)
 @click.pass_context
-def cli (ctx, ana_name, ana_dir, save, base_dir, job_basedir, mask_deg, source_r,nsrc_tomask):
-    ctx.obj = State.state = State (ana_name, ana_dir, save, base_dir, job_basedir, mask_deg, source_r,nsrc_tomask)
+def cli (ctx, ana_name, ana_dir, save, base_dir, job_basedir, mask_deg, source_r, nsrc_tomask, mask_self):
+    ctx.obj = State.state = State (ana_name, ana_dir, save, base_dir, job_basedir, mask_deg, source_r, nsrc_tomask, mask_self)
 
 
 @cli.resultcallback ()
@@ -70,7 +74,7 @@ def setup_ana (state):
 @click.option ('--n-trials', default=10000, type=int)
 @click.option ('--n-jobs', default=10, type=int)
 @click.option ('-n', '--n-sig', 'n_sigs', multiple=True, default=[0], type=float)
-@click.option ('--gamma', default=2, type=float)
+@click.option ('--gamma', default=3.0, type=float)
 @click.option ('-c', '--cutoff', default=np.inf, type=float, help='exponential cutoff energy (TeV)')      
 @click.option ('--poisson/--nopoisson', default=True)
 @click.option ('--sigsub/--nosigsub', default=True)
@@ -124,24 +128,22 @@ def submit_do_ps_trials (
 @click.option ('-n', '--n-sig', 'n_sigs', multiple=True, default=[0], type=float)
 @click.option ('--poisson/--nopoisson', default=True)
 @click.option ('--sigsub/--nosigsub', default=True)
-@click.option ('--dec', 'dec_degs', multiple=True, type=float, default=())
-@click.option ('--dist', 'dist_mpcs', multiple=True, type=float, default=())
-@click.option ('--logl', 'log_lumins', multiple=True, type=float, default=())
+@click.option ('-nsrc', '--n-sources', 'n_srcs', default=14, type=int, help="the top n src to run")
 @click.option ('--dry/--nodry', default=False)
 @click.option ('--seed', default=0)
-@click.option ('--gamma', default=0, help='0 is fit to model, otherwise call pl')
+@click.option ('--gamma', default=0, type=float, help='0 is fit to model, otherwise call pl')
 @pass_state
 def submit_do_seyfert_ps_trials (
         state, n_trials, n_jobs, n_sigs,
-        poisson, sigsub, dec_degs, dist_mpcs, log_lumins, 
+        poisson, sigsub, n_srcs,
         dry, seed, gamma):
     ana_name = state.ana_name
     ana_command=''
     if state.mask_deg !=0 :
         ana_command +=' --mask_deg={}'.format(state.mask_deg)
     if state.source_r !=0:
-        assert state.nsrc_tomask !=0, "mask on all source for individual's trial!"
-        ana_command +=' --source_r={} --nsrc_tomask={}'.format(state.source_r, state.nsrc_tomask)
+        if state.nsrc_tomask>0:
+            ana_command +=' --nsrc_tomask={} --source_r={}'.format(state.nsrc_tomask, state.source_r)
 
     T = time.time ()
     poisson_str = 'poisson' if poisson else 'nopoisson'
@@ -154,20 +156,23 @@ def submit_do_seyfert_ps_trials (
         max_jobs=1000, config = submit_cfg_file)
     commands, labels = [], []
     trial_script = os.path.abspath('trials.py')
-    dec_degs = dec_degs or np.r_[-81:+81:2]
-    for dec_deg, dist_mpc, log_lumin in zip(dec_degs, dist_mpcs, log_lumins):
+    for ind in range(n_srcs):
         for n_sig in n_sigs:
             for i in range (n_jobs):
                 s = i + seed
-                fmt = ' {} {} do-seyfert-ps-trials --dec_deg={:+08.3f} --dist_mpc={} --log_lumin={} --n-trials={}' \
+                fmt = ' {} {} do-seyfert-ps-trials --n-src={} --n-trials={}' \
                         ' --n-sig={} ' \
                         ' --{} --seed={} --{} --gamma={}'
-
-                command = fmt.format (trial_script,  ana_command, dec_deg, dist_mpc, log_lumin, n_trials,
+                if state.mask_self:
+                    mask_command =ana_command + ' --nth_tomask={}'.format(ind)
+                    command = fmt.format (trial_script, mask_command, ind, n_trials,
                                       n_sig, poisson_str, s,sigsub_str, gamma)
-                fmt = 'csky__dec_{:+08.3f}__trials_{:07d}__n_sig_{:08.3f}__' \
+                else:
+                    command = fmt.format (trial_script, ana_command, ind, n_trials,
+                                      n_sig, poisson_str, s,sigsub_str, gamma)
+                fmt = 'csky__src_{:02d}__trials_{:07d}__n_sig_{:08.3f}__' \
                         '{}__seed_{:04d}'
-                label = fmt.format (dec_deg, n_trials, n_sig,
+                label = fmt.format (ind, n_trials, n_sig,
                                     poisson_str, s )
                 commands.append (command)
                 labels.append (label)
@@ -203,7 +208,6 @@ def submit_do_ps_sens (
     sindecs[0] = -.99
     sindecs[-1] = .99
     dec_degs = dec_deg or np.degrees(np.arcsin(sindecs))
-    print(dec_degs)
     for dec_deg in dec_degs:
         s =  seed
         fmt = '{} do-ps-sens  --n-trials {}' \
@@ -225,90 +229,6 @@ def submit_do_ps_sens (
         sub.submit_npx4 (commands, labels)
 
 
-@cli.command()
-@click.option('--n-trials', default=100, type=int)
-@click.option('--n-jobs', default=10, type=int)
-@click.option('--dry/--nodry', default=False)
-@click.option('--seed', default=0)
-@pass_state
-def submit_do_correlated_trials_sourcelist(
-        state, n_trials, n_jobs,  dry, seed):
-    ana_name = state.ana_name
-    T = time.time()
-    job_basedir = state.job_basedir
-    job_dir = '{}/{}/correlated_trials_sourcelist/T_{:17.6f}'.format(
-        job_basedir, ana_name,  T)
-    sub = Submitter(
-        job_dir=job_dir, memory=5,
-        max_jobs=1000, config=submit_cfg_file)
-
-    commands, labels = [], []
-    trial_script = os.path.abspath('trials.py')
-    for i in range(n_jobs):
-        s = i + seed
-        fmt = '{} do-correlated-trials-sourcelist --n-trials {} --seed={}'
-        command = fmt.format(trial_script,  n_trials, s)
-        fmt = 'csky_correlated_trials_sourcelist_{:07d}_seed_{:04d}'
-        label = fmt.format(n_trials, s)
-        commands.append(command)
-        labels.append(label)
-    sub.dry = dry
-    if 'condor00' in hostname:
-        sub.submit_condor00(commands, labels)
-    else:
-        sub.submit_npx4(commands, labels)
-
-
-@cli.command ()
-@click.option ('--n-jobs', default=10, type=int)
-@click.option ('--n-trials', default=10000, type=int)
-@click.option ('--gamma', default=2, type=float)
-@click.option ('--dry/--nodry', default=False)
-@click.option ('--seed', default=0)
-@click.option ('-sourcenum', multiple=True, default=None, type=float)
-@pass_state                                                                                                               
-def submit_do_bkg_trials_sourcelist (
-        state, n_jobs, n_trials,  gamma,  dry, seed, sourcenum):
-    ana_name = state.ana_name
-    T = time.time ()
-    job_basedir = state.job_basedir 
-    job_dir = '{}/{}/correlated_trials_sourcelist_bkg/T_{:17.6f}'.format(
-        job_basedir, ana_name,  T)
-    sub = Submitter (job_dir=job_dir, memory=5, 
-        max_jobs=1000, config = submit_cfg_file)
-    commands, labels = [], []
-    this_script = os.path.abspath (__file__)
-    trial_script = os.path.abspath('unblind.py')
-    if sourcenum:
-        sources = sourcenum
-    else:
-        nsources = 109
-        sources = [int(source) for source in range(nsources)]
-    print('Submitting For Sources:')
-    print(sources)   
-    for source in sources:
-        for i in range (n_jobs):
-            s = i + seed
-            fmt = '{} do-bkg-trials-sourcelist  --n-trials {}' \
-                                ' --sourcenum {}' \
-                                ' --seed={}'
-            command = fmt.format ( trial_script,  n_trials,
-                                   source, s)
-            fmt = 'csky_sens_{:07d}_' \
-                    'source_{}_seed_{:04d}'
-            label = fmt.format (
-                    n_trials, 
-                    source, s)
-            commands.append (command)
-            labels.append (label)
-    sub.dry = dry
-    if 'condor00' in hostname:
-        sub.submit_condor00 (commands, labels)
-    else:
-        sub.submit_npx4 (commands, labels)
-
-
-
 @cli.command ()
 @click.option ('--n-trials', default=10000, type=int)
 @click.option ('--n-jobs', default=10, type=int)
@@ -322,7 +242,7 @@ def submit_do_bkg_trials_sourcelist (
 @click.option ('--weightedfit', default=False, type=bool)
 @click.option ('--corona', default=True, type=bool)
 @click.option ('--debug', default=False, type=bool)
-@click.option ('--nu_max', default=1000, type=float)
+@click.option ('--nu_max', default=1000, type=float, help="cenA is 6.5")
 @click.option ('--nu_min', default =0.1557, type=float)
 @pass_state
 def submit_do_seyfert_stacking_trials (
@@ -343,7 +263,7 @@ def submit_do_seyfert_stacking_trials (
     job_basedir = state.job_basedir 
     job_dir = '{}/{}/stacking_trials/T_E{}_{:17.6f}'.format (
         job_basedir, ana_name, int(gamma * 100),  T)
-    sub = Submitter (job_dir=job_dir, memory=5, 
+    sub = Submitter (job_dir=job_dir, memory=2, 
         max_jobs=1000, config = submit_cfg_file)
     commands, labels = [], []
     trial_script = os.path.abspath('trials.py')
@@ -474,30 +394,30 @@ def submit_do_gp_trials (
         sub.submit_npx4 (commands, labels)
 
 @cli.command ()
-@click.argument('temp', default="kra5")
+@click.argument('temp', default="pi0")
 @click.option ('--n-trials', default=1000, type=int)
 @click.option ('--n-jobs', default=10, type=int)
 @click.option ('-n', '--n-sig', 'n_sigs', multiple=True, default=[0], type=float)
-@click.option ('-nsrc', '--n-sources', 'n_srcs', default=30, type=int, help="the top n src to run")
+@click.option ('-nsrc', '--n-sources', 'n_srcs', default=14, type=int, help="the top n src to run")
 @click.option ('--poisson/--nopoisson', default=True)
 @click.option ('--dry/--nodry', default=False)
 @click.option ('-c', '--cutoff', default=np.inf, type=float, help='exponential cutoff energy (TeV)')
 @click.option ('--seed', default=0, type=int)
+@click.option ('--gamma', default=0, type=float)
 @pass_state
 def submit_do_gp_bg_ps_trials (
         state, temp, n_trials, n_jobs, n_sigs, n_srcs,
-        poisson, dry, cutoff, seed):
+        poisson, dry, cutoff, seed, gamma):
     #example command using click python submit.py submit-do-gp-trials --n-sig=0 --n-jobs=1 --n-trials=1000 pi0
     ana_name = state.ana_name
     T = time.time ()
     job_basedir = state.job_basedir
     poisson_str = 'poisson' if poisson else 'nopoisson'
-    job_dir = '{}/{}/gp_trials/{}/T_{:17.6f}'.format (
-        job_basedir, ana_name, temp, T)
-    sub = Submitter (job_dir=job_dir, memory=3,
+    job_dir = '{}/{}/gp_trials/{}/T_E{}_{:17.6f}'.format (
+        job_basedir, ana_name, temp, int(gamma * 100), T)
+    sub = Submitter (job_dir=job_dir, memory=2,
         max_jobs=1000, config = submit_cfg_file)
     commands, labels = [], []
-    reqs = '(Machine != "cobol93.private.pa.umd.edu")'
     trial_script = os.path.abspath('trials.py')
 
     for ind in range(n_srcs):
@@ -507,14 +427,14 @@ def submit_do_gp_bg_ps_trials (
                 fmt = '{} do-gp-bg-ps-trials --n-trials={}' \
                         ' --n-sig={} ' \
                         ' --nsrc={} ' \
-                        ' --{} --seed={} --cutoff {} {}'
+                        ' --{} --seed={} --cutoff {} --gamma={}'
                 command = fmt.format (trial_script,  n_trials,
-                                  n_sig, ind, poisson_str,  s, cutoff, temp)
+                                  n_sig, ind, poisson_str,  s, cutoff, gamma)
                 fmt = 'csky__trials_{:07d}__n_sig_{:08.3f}__' \
-                        'src_{}th__{}__{}__seed_{:04d}__cutoff_{}'
+                        'src_{}th__{}__{}__seed_{:04d}__cutoff_{}_gamma_{:08.3f}'
                 label = fmt.format (
                     n_trials,  n_sig, ind, temp, poisson_str,
-                    s,   cutoff)
+                    s,   cutoff, gamma)
                 commands.append (command)
                 labels.append (label)
     if 'condor00' in hostname:
@@ -523,63 +443,6 @@ def submit_do_gp_bg_ps_trials (
     else:
         sub.submit_npx4 (commands, labels)
 
-@cli.command ()
-@click.option ('--n-jobs', default=10, type=int)
-@click.option ('--cpus', default=1, type=int)
-@click.option ('-n', '--n-sig', default=0, type=float)
-@click.option ('--gamma', default=2, type=float)
-@click.option ('--dec', 'dec_deg',  type=float, default= 0 )
-@click.option ('--dry/--nodry', default=False)
-@click.option ('--seed', default=0)
-@click.option('--nside', default=128, type=int)
-@click.option('--poisson/--nopoisson', default=True,
-              help='toggle possion weighted signal injection')
-@click.option('--fit/--nofit', default=False,
-              help='Use Chi2 Fit or not for the bg trials at each declination')
-@pass_state
-def submit_do_sky_scan_trials (
-        state,  n_jobs, cpus, n_sig, gamma, nside, poisson, fit,
-         dec_deg, dry, 
-        seed):
-    ana_name = state.ana_name
-    T = time.time ()
-
-    poisson_str = 'poisson' if poisson else 'nopoisson'
-    fit_str = 'fit' if fit else 'nofit'
-
-    job_basedir = state.job_basedir 
-    job_dir = '{}/{}/skyscan_trials/T_E{}_n_sig_{}_{:17.6f}'.format (
-        job_basedir, ana_name, int(gamma * 100), n_sig,  T)
-    sub = Submitter (job_dir=job_dir, memory=7, ncpu=cpus, 
-        max_jobs=1000, config = submit_cfg_file)
-    commands, labels = [], []
-    trial_script = os.path.abspath('trials.py')
-    for i in range (n_jobs):
-        s = i + seed
-        fmt = (
-            ' {} do-sky-scan-trials --dec_deg={:+08.3f}'
-            ' --n-sig={} --gamma={:.3f} --seed={} --cpus={}'
-            '--nside={} --{} --{}'
-        )
-        command = fmt.format(
-            trial_script,  dec_deg,
-            n_sig, gamma, s, cpus,
-            nside, poisson_str, fit_str,
-        )
-
-        fmt = 'csky__scan_dec_{:+08.3f}___n_sig_{:08.3f}__' \
-                'gamma_{:.3f}_seed_{:04d}'
-        label = fmt.format (dec_deg, n_sig, gamma,
-                             s)
-        commands.append (command)
-        labels.append (label)
-    sub.dry = dry
-    reqs = '(Machine != "cobol85.private.pa.umd.edu")'
-    print(hostname)
-    if 'condor00' in hostname:
-        sub.submit_condor00 (commands, labels, reqs=reqs)
-    else:
-        sub.submit_npx4 (commands, labels)
 
 if __name__ == '__main__':
     exe_t0 = now ()

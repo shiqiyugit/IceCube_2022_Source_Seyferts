@@ -496,6 +496,7 @@ class Submitter (object):
                 pr ('Output         = {}/{}.out'.format (log_dir, dag_label))
                 pr ('Error          = {}/{}.err'.format (log_dir, dag_label))
                 pr ('Notification   = NEVER')
+                pr ('+OriginalTime = 1200')
                 if 'submit-1' in hostname:
                     pr ('should_transfer_files = YES')
                     #pr ('when_to_transfer_output = ON_EXIT')
