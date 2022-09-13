@@ -244,10 +244,11 @@ def submit_do_ps_sens (
 @click.option ('--debug', default=False, type=bool)
 @click.option ('--nu_max', default=1000, type=float, help="cenA is 6.5")
 @click.option ('--nu_min', default =0.1557, type=float)
+@click.option ('--gpbg', default =False, type=bool)
 @pass_state
 def submit_do_seyfert_stacking_trials (
         state, n_trials, n_jobs, n_sigs, gamma, cutoff,  poisson,  sigsub,
-        catalog,  seed, weightedfit, corona, debug, nu_min, nu_max):
+        catalog,  seed, weightedfit, corona, debug, nu_min, nu_max, gpbg):
     ana_name = state.ana_name
     ana_command=''
     if state.mask_deg !=0:
@@ -277,10 +278,10 @@ def submit_do_seyfert_stacking_trials (
                 s = i + seed
                 fmt = ' {} {} do-seyfert-stacking-trials --catalog={} --n-trials={}' \
                         ' --n-sig={} --gamma={:.3f} --cutoff={}' \
-                        ' --{} --seed={} --weightedfit={} --corona={} --debug={} --nu_max={} --nu_min={} --{}'
+                        ' --{} --seed={} --weightedfit={} --corona={} --debug={} --nu_max={} --nu_min={} --{} --gpbg={}'
   
                 command = fmt.format (trial_script, ana_command,  cat, n_trials,
-                                      n_sig, gamma, cutoff, poisson_str, s, weightedfit, corona, debug, nu_max, nu_min, sigsub_str)
+                                      n_sig, gamma, cutoff, poisson_str, s, weightedfit, corona, debug, nu_max, nu_min, sigsub_str, gpbg)
                 fmt = 'csky__cat_{}__trials_{:07d}__n_sig_{:08.3f}__' \
                         'gamma_{:.3f}_cutoff_{}_{}__seed_{:04d}'
                 label = fmt.format (cat, n_trials, n_sig, gamma,
@@ -400,22 +401,29 @@ def submit_do_gp_trials (
 @click.option ('-n', '--n-sig', 'n_sigs', multiple=True, default=[0], type=float)
 @click.option ('-nsrc', '--n-sources', 'n_srcs', default=14, type=int, help="the top n src to run")
 @click.option ('--poisson/--nopoisson', default=True)
-@click.option ('--dry/--nodry', default=False)
 @click.option ('-c', '--cutoff', default=np.inf, type=float, help='exponential cutoff energy (TeV)')
 @click.option ('--seed', default=0, type=int)
 @click.option ('--gamma', default=0, type=float)
+@click.option ('--memory', default=1, type=float)
 @pass_state
 def submit_do_gp_bg_ps_trials (
         state, temp, n_trials, n_jobs, n_sigs, n_srcs,
-        poisson, dry, cutoff, seed, gamma):
+        poisson, cutoff, seed, gamma, memory):
     #example command using click python submit.py submit-do-gp-trials --n-sig=0 --n-jobs=1 --n-trials=1000 pi0
     ana_name = state.ana_name
+    ana_command=''
+    if state.mask_deg !=0:
+        ana_command +=' --mask_deg={}'.format(state.mask_deg)
+    if state.source_r !=0:
+        assert state.nsrc_tomask is not 0, "only mask top few sources!"
+        ana_command +=' --nsrc_tomask={} --source_r={}'.format(state.nsrc_tomask, state.source_r)
+
     T = time.time ()
     job_basedir = state.job_basedir
     poisson_str = 'poisson' if poisson else 'nopoisson'
     job_dir = '{}/{}/gp_trials/{}/T_E{}_{:17.6f}'.format (
         job_basedir, ana_name, temp, int(gamma * 100), T)
-    sub = Submitter (job_dir=job_dir, memory=2,
+    sub = Submitter (job_dir=job_dir, memory=memory,
         max_jobs=1000, config = submit_cfg_file)
     commands, labels = [], []
     trial_script = os.path.abspath('trials.py')
@@ -424,18 +432,18 @@ def submit_do_gp_bg_ps_trials (
         for n_sig in n_sigs:
             for i in range (n_jobs):
                 s = i + seed
-                fmt = '{} do-gp-bg-ps-trials --n-trials={}' \
+                fmt = '{} {} do-gp-bg-ps-trials --n-trials={}' \
                         ' --n-sig={} ' \
                         ' --nsrc={} ' \
-                        ' --{} --seed={} --cutoff {} --gamma={}'
-                command = fmt.format (trial_script,  n_trials,
+                        ' --{} --seed={} --cutoff {} --gamma={} ;'
+                command = fmt.format (trial_script, ana_command, n_trials,
                                   n_sig, ind, poisson_str,  s, cutoff, gamma)
-                fmt = 'csky__trials_{:07d}__n_sig_{:08.3f}__' \
-                        'src_{}th__{}__{}__seed_{:04d}__cutoff_{}_gamma_{:08.3f}'
-                label = fmt.format (
-                    n_trials,  n_sig, ind, temp, poisson_str,
-                    s,   cutoff, gamma)
                 commands.append (command)
+                fmt = 'csky__trials_{:07d}__n_sig_{:08.3f}__' \
+                    'src_{}th__{}__{}__seed_{:04d}__cutoff_{}_gamma_{:08.3f}'
+                label = fmt.format (
+                   n_trials,  n_sig, ind, temp, poisson_str,
+                   s,   cutoff, gamma)
                 labels.append (label)
     if 'condor00' in hostname:
         print('submitting from condor00')
