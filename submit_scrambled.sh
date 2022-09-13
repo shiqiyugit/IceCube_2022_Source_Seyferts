@@ -6,15 +6,16 @@
 #model inj model fit
 #submit_do_gp_bg_ps_trials
 #signal trials
-python submit.py --mask_deg 10 --nsrc_tomask 4 --source_r 7 --mask_self True submit-do-gp-bg-ps-trials --n-trials 10000 --n-jobs 1 --n-sig=1 --n-sig=2 --n-sig=3 --n-sig=4 --n-sig=5 --n-sig=6 --n-sig=7 --n-sig=8 --n-sig=9 --n-sig=10  --n-sig=11 --n-sig=12 --n-sig=13 --n-sig=14 --n-sig=15 --n-sig=16 --n-sig=17 --n-sig=18 --n-sig=19 --n-sig=20 -nsrc 14
-
+#python submit.py --mask_deg 10 --nsrc_tomask 4 --source_r 7 --mask_self True submit-do-gp-bg-ps-trials --n-trials 1 --n-jobs 1 --n-sig=1
+#python submit.py --mask_deg 10 --nsrc_tomask 4 --source_r 7 --mask_self True submit-do-gp-bg-ps-trials --n-trials 10000 --n-jobs 1 --n-sig=1 --n-sig=2 --n-sig=3 --n-sig=4 --n-sig=5 --n-sig=6 --n-sig=7 --n-sig=8 --n-sig=9 --n-sig=10  --n-sig=11 --n-sig=12 --n-sig=13 --n-sig=14 --n-sig=15 --n-sig=16 --n-sig=17 --n-sig=18 --n-sig=19 --n-sig=20 -nsrc 14 --memory 0.8
 #bkg trails
-python submit.py --mask_deg 10 --nsrc_tomask 4 --source_r 7 --mask_self True submit-do-gp-bg-ps-trials --n-trials 2000000 --n-jobs 50 -nsrc 14
-
+python submit.py --mask_deg 10 --nsrc_tomask 4 --source_r 7 --mask_self True submit-do-gp-bg-ps-trials --n-trials 5000000 --n-jobs 20 -nsrc 14
 #model inj pl fit
 #signal trials
-#python submit.py --mask_deg 10 --nsrc_tomask 4 --source_r 7 --mask_self True submit-do-gp-bg-ps-trials --n-trials 10000 --n-jobs 1 --n-sig=1 --n-sig=2 --n-sig=3 --n-sig=4 --n-sig=5 --n-sig=6 --n-sig=7 --n-sig=8 --n-sig=9 --n-sig=10  --n-sig=11 --n-sig=12 --n-sig=13 --n-sig=14 --n-sig=15 --n-sig=16 --n-sig=17 --n-sig=18 --n-sig=19 --n-sig=20 -nsrc 14 --gamma 3
-#python submit.py --mask_deg 10 --nsrc_tomask 4 --source_r 7 --mask_self True submit-do-seyfert-ps-trials --osigsub --gamma 3 --n-trials 10000 --n-jobs 1 --n-sig=1 --n-sig=2 --n-sig=3 --n-sig=4 --n-sig=5 --n-sig=6 --n-sig=7 --n-sig=8 --n-sig=9 --n-sig=10  --n-sig=11 --n-sig=12 --n-sig=13 --n-sig=14 --n-sig=15 --n-sig=16 --n-sig=17 --n-sig=18 --n-sig=19 --n-sig=20 -nsrc 14
+python submit.py --mask_deg 10 --nsrc_tomask 4 --source_r 7 --mask_self True submit-do-gp-bg-ps-trials --n-trials 10000 --n-jobs 1 --n-sig=1 --n-sig=2 --n-sig=3 --n-sig=4 --n-sig=5 --n-sig=6 --n-sig=7 --n-sig=8 --n-sig=9 --n-sig=10  --n-sig=11 --n-sig=12 --n-sig=13 --n-sig=14 --n-sig=15 --n-sig=16 --n-sig=17 --n-sig=18 --n-sig=19 --n-sig=20 -nsrc 14 --gamma 3 --memory 0.8 
+python submit.py --mask_deg 10 --nsrc_tomask 4 --source_r 7 --mask_self True submit-do-gp-bg-ps-trials --n-trials 5000000 --n-jobs 20 -nsrc 14 --gamma 3 --memory 0.8
+
+#python submit.py --mask_deg 10 --nsrc_tomask 4 --source_r 7 --mask_self True submit-do-seyfert-ps-trials --nosigsub --gamma 3 --n-trials 10000 --n-jobs 1 --n-sig=1 --n-sig=2 --n-sig=3 --n-sig=4 --n-sig=5 --n-sig=6 --n-sig=7 --n-sig=8 --n-sig=9 --n-sig=10  --n-sig=11 --n-sig=12 --n-sig=13 --n-sig=14 --n-sig=15 --n-sig=16 --n-sig=17 --n-sig=18 --n-sig=19 --n-sig=20 -nsrc 14 --memory 0.8 
 
 #bg trials
 #python submit.py --mask_deg 10 --nsrc_tomask 4 --source_r 7 --mask_self True submit-do-gp-bg-ps-trials --n-trials 2000000 --n-jobs 50 -nsrc 14 --gamma 3
