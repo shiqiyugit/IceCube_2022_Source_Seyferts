@@ -662,12 +662,13 @@ def find_ps_n_sig(state, nsigma, cutoff, gamma, verbose, fit, inputdir, corona, 
 @click.option ('--cpus', default=1, type=int)
 @click.option ('--corona', default=True, type=bool, help="inject with corona flux or not")
 @click.option ('--debug', default=False, type=bool)
-@click.option ('--nu_max', default = 1000, type=float)
-@click.option ('--nu_min', default =0.1557, type=float)
+@click.option ('--nu_max', default = 6, type=float)
+@click.option ('--nu_min', default =0.3, type=float)
+@click.option ('--gpbg', default=False, type=bool)
 @pass_state
 def do_seyfert_stacking_trials (
         state, n_trials, gamma, cutoff, catalog,
-        n_sig,  poisson, sigsub, seed, cpus, corona, debug, weightedfit, nu_min, nu_max, logging=True):
+        n_sig,  poisson, sigsub, seed, cpus, corona, debug, weightedfit, nu_min, nu_max, gpbg, logging=True):
     """
     Do trials from a stacking catalog
     """
@@ -685,29 +686,34 @@ def do_seyfert_stacking_trials (
         idx2 =np.logical_and(df_orig['neutrino_expectation_estes'] >=nu_min, df_orig['neutrino_expectation_estes']<=nu_max)
     cat = df_orig[idx&idx2].sort_values(by='neutrino_expectation_estes', ascending=False).copy(deep=True)
     print(sum(cat['neutrino_expectation_estes']))
-
     print(len(cat), cat[['CTPT_NAME','DECdeg', 'DIST', 'F2-10-intr', 'F14-195-intr','logNH', 'neutrino_expectation_estes']])
     src_dist = cat['DIST']
     src_log_lumin = cat['logL2-10-intr']
     cutoff_GeV = cutoff * 1e3
     weights = None
     weighted_src = None
-#        if debug:
-#            weights = np.ones(len(cat))
-#            weights[0] = 40
     if weightedfit:
         weights = cat['F2-10-intr']
         print("weights: ", weights)
         weighted_src = cy.utils.Sources(dec=cat['DECdeg'], ra=cat['RAdeg'], deg=True, weight = weights)
 
     src = cy.utils.Sources(dec=cat['DECdeg'], ra=cat['RAdeg'], deg=True) 
+    sigmas = ana[0].sig.sigma
+    def get_tr(src, gamma, src_dist, src_log_lumin, corona=corona, cpus=cpus, weighted_src = None, sigsub=sigsub, gpbg=gpbg, temp='pi0'):
+        if gpbg:
+            if corona:
+                gp_conf = cg.get_gp_bg_ps_conf(src=src, src_dist=dist_mpc, src_log_lumin=log_lumin, weighted_src = weighted_src,
+                          template_str=temp, sigmas = sigmas, cutoff_GeV=cutoff_GeV, base_dir=state.base_dir, mcbg=mcbg, gamma=gamma)
+            else:
+                gp_conf = cg.get_gp_bg_ps_conf(src=src, gamma=gamma, cutoff_GeV=cutoff_GeV)
 
-    def get_tr(src, gamma, src_dist, src_log_lumin, corona=corona, cpus=cpus, weighted_src = None, sigsub=sigsub):
-        if corona:
-            conf = cg.get_seyfert_ps_conf(src, src_dist, src_log_lumin, gamma, weighted_src = weighted_src, sigsub=sigsub)
+            tr = cy.get_trial_runner(gp_conf, inj_conf = gp_conf, update_bg = True, sigsub=sigsub, ana=ana, mp_cpus=cpus, seed=seed)
         else:
-            conf = cg.get_ps_conf(src=src, gamma=gamma, cutoff_GeV=cutoff_GeV)
-        tr = cy.get_trial_runner(ana=ana, conf= conf, mp_cpus=cpus)
+            if corona:
+                conf = cg.get_seyfert_ps_conf(src, src_dist, src_log_lumin, gamma, weighted_src = weighted_src, sigsub=sigsub)
+            else:
+                conf = cg.get_ps_conf(src=src, gamma=gamma, cutoff_GeV=cutoff_GeV)
+            tr = cy.get_trial_runner(ana=ana, conf= conf, mp_cpus=cpus)
         return tr
     
     tr = get_tr(src, gamma,src_dist,src_log_lumin, corona, cpus, weighted_src)
